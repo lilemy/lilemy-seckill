@@ -1,0 +1,23 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.lilemy</groupId>
+        <artifactId>lilemy-seckill</artifactId>
+        <version>${revision}</version>
+    </parent>
+
+
+    <artifactId>lilemy-seckill-goods</artifactId>
+    <name>lilemy-seckill-goods</name>
+    <description>商品模块，放置秒杀商品列表、商品详情等接口</description>
+    <packaging>jar</packaging>
+
+    <dependencies>
+        <!-- 引入公共模块 -->
+        <dependency>
+            <groupId>com.lilemy</groupId>
+            <artifactId>lilemy-seckill-common</artifactId>
+        </dependency>
+    </dependencies>
+</project>

@@ -1,0 +1,50 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <parent>
+        <groupId>com.lilemy</groupId>
+        <artifactId>lilemy-seckill</artifactId>
+        <version>${revision}</version>
+    </parent>
+
+    <name>lilemy-seckill-app</name>
+    <artifactId>lilemy-seckill-app</artifactId>
+    <description>启动模块，负责整合所有业务模块</description>
+    <packaging>jar</packaging>
+
+    <dependencies>
+        <!-- 引入订单模块 -->
+        <dependency>
+            <groupId>com.lilemy</groupId>
+            <artifactId>lilemy-seckill-order</artifactId>
+        </dependency>
+
+        <!-- 引入用户模块 -->
+        <dependency>
+            <groupId>com.lilemy</groupId>
+            <artifactId>lilemy-seckill-user</artifactId>
+        </dependency>
+
+        <!-- 引入商品模块 -->
+        <dependency>
+            <groupId>com.lilemy</groupId>
+            <artifactId>lilemy-seckill-goods</artifactId>
+        </dependency>
+
+        <!-- Spring Boot Test 单元测试 -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.springframework.boot</groupId>
+                <artifactId>spring-boot-maven-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+</project>

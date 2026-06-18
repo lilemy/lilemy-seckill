@@ -1,0 +1,144 @@
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>3.5.15</version>
+        <relativePath/> <!-- lookup parent from repository -->
+    </parent>
+
+    <groupId>com.lilemy</groupId>
+    <artifactId>lilemy-seckill</artifactId>
+    <version>${revision}</version>
+    <name>${project.artifactId}</name>
+    <description>秒杀系统</description>
+    <packaging>pom</packaging>
+
+    <!-- 子模块管理 -->
+    <modules>
+        <!-- 公共模块   -->
+        <module>lilemy-seckill-common</module>
+        <!-- 用户模块 -->
+        <module>lilemy-seckill-user</module>
+        <!-- 商品模块 -->
+        <module>lilemy-seckill-goods</module>
+        <!-- 订单模块 -->
+        <module>lilemy-seckill-order</module>
+        <!-- 启动入口 -->
+        <module>lilemy-seckill-app</module>
+    </modules>
+
+    <properties>
+        <revision>0.0.1-SNAPSHOT</revision>
+        <java.version>21</java.version>
+        <maven.compiler.source>${java.version}</maven.compiler.source>
+        <maven.compiler.target>${java.version}</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+
+        <mybatis-flex.version>1.11.7</mybatis-flex.version>
+        <hutool.version>5.8.38</hutool.version>
+    </properties>
+
+    <!-- 统一依赖管理 -->
+    <dependencyManagement>
+        <dependencies>
+            <!-- 公共模块 -->
+            <dependency>
+                <groupId>com.lilemy</groupId>
+                <artifactId>lilemy-seckill-common</artifactId>
+                <version>${revision}</version>
+            </dependency>
+            <!-- 用户模块 -->
+            <dependency>
+                <groupId>com.lilemy</groupId>
+                <artifactId>lilemy-seckill-user</artifactId>
+                <version>${revision}</version>
+            </dependency>
+            <!-- 商品模块 -->
+            <dependency>
+                <groupId>com.lilemy</groupId>
+                <artifactId>lilemy-seckill-goods</artifactId>
+                <version>${revision}</version>
+            </dependency>
+            <!-- 订单模块 -->
+            <dependency>
+                <groupId>com.lilemy</groupId>
+                <artifactId>lilemy-seckill-order</artifactId>
+                <version>${revision}</version>
+            </dependency>
+            <!-- 启动入口 -->
+            <dependency>
+                <groupId>com.lilemy</groupId>
+                <artifactId>lilemy-seckill-app</artifactId>
+                <version>${revision}</version>
+            </dependency>
+
+            <dependency>
+                <groupId>com.mybatis-flex</groupId>
+                <artifactId>mybatis-flex-spring-boot3-starter</artifactId>
+                <version>${mybatis-flex.version}</version>
+            </dependency>
+            <!-- 代码生成模块 -->
+            <dependency>
+                <groupId>com.mybatis-flex</groupId>
+                <artifactId>mybatis-flex-codegen</artifactId>
+                <version>${mybatis-flex.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.hutool</groupId>
+                <artifactId>hutool-all</artifactId>
+                <version>${hutool.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <!-- 统一插件管理 -->
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                    <executions>
+                        <execution>
+                            <id>repackage</id>
+                            <goals>
+                                <goal>repackage</goal> <!-- 将依赖的 Jar 一起打包 -->
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-compiler-plugin</artifactId>
+                    <configuration>
+                        <source>${java.version}</source>
+                        <target>${java.version}</target>
+                        <encoding>${project.build.sourceEncoding}</encoding>
+                        <annotationProcessorPaths>
+                            <path>
+                                <groupId>org.projectlombok</groupId>
+                                <artifactId>lombok</artifactId>
+                            </path>
+                        </annotationProcessorPaths>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+
+    <repositories>
+        <repository>
+            <id>aliyunmaven</id>
+            <name>aliyun</name>
+            <url>https://maven.aliyun.com/repository/public</url>
+        </repository>
+        <repository>
+            <id>huaweicloud</id>
+            <name>huawei</name>
+            <url>https://mirrors.huaweicloud.com/repository/maven/</url>
+        </repository>
+    </repositories>
+</project>
