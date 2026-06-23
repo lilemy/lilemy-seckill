@@ -37,6 +37,7 @@
         <maven.compiler.target>${java.version}</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
+        <disruptor.version>3.4.4</disruptor.version>
         <mybatis-flex.version>1.11.7</mybatis-flex.version>
         <hutool.version>5.8.38</hutool.version>
     </properties>
@@ -75,6 +76,12 @@
                 <version>${revision}</version>
             </dependency>
 
+            <!-- Disruptor 高性能队列（Log4j2 异步日志需要） -->
+            <dependency>
+                <groupId>com.lmax</groupId>
+                <artifactId>disruptor</artifactId>
+                <version>${disruptor.version}</version>
+            </dependency>
             <dependency>
                 <groupId>com.mybatis-flex</groupId>
                 <artifactId>mybatis-flex-spring-boot3-starter</artifactId>
