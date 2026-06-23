@@ -1,5 +1,7 @@
 package com.lilemy.seckill.user.service.impl;
 
+import cloud.tianai.captcha.application.ImageCaptchaApplication;
+import cloud.tianai.captcha.spring.plugins.secondary.SecondaryVerificationApplication;
 import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.util.RandomUtil;
 import cn.hutool.core.util.StrUtil;
@@ -8,6 +10,7 @@ import com.lilemy.seckill.common.enums.ResponseCodeEnum;
 import com.lilemy.seckill.common.exception.BizException;
 import com.lilemy.seckill.common.mapper.UserMapper;
 import com.lilemy.seckill.common.utils.Response;
+import com.lilemy.seckill.user.constant.UserConstant;
 import com.lilemy.seckill.user.enums.LoginTypeEnum;
 import com.lilemy.seckill.user.enums.UserStatusEnum;
 import com.lilemy.seckill.user.enums.VerifyCodeTypeEnum;
@@ -20,13 +23,17 @@ import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.spring.service.impl.ServiceImpl;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.data.redis.core.RedisOperations;
-import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.core.SessionCallback;
-import org.springframework.lang.NonNull;
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.LocalTime;
+import java.util.Collections;
 import java.util.Objects;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
@@ -42,19 +49,53 @@ import java.util.concurrent.TimeUnit;
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements UserService {
 
     @Resource
-    private RedisTemplate<String, Object> redisTemplate;
+    private StringRedisTemplate stringRedisTemplate;
 
     @Resource(name = "bizExecutor")
     private Executor bizExecutor;
 
-    // Redis 中验证码的 Key 前缀
-    private static final String VERIFY_CODE_KEY_PREFIX = "verify_code:";
-    // Redis 中发送频率限制的 Key 前缀
-    private static final String VERIFY_CODE_LIMIT_KEY_PREFIX = "verify_code_limit:";
-    // 验证码过期时间（分钟）
-    private static final Long VERIFY_CODE_EXPIRE_MINUTES = 5L;
-    // 发送频率限制时间（秒）
-    private static final Long VERIFY_CODE_LIMIT_SECONDS = 60L;
+    @Resource
+    private ImageCaptchaApplication imageCaptchaApplication;
+
+    // BCrypt 密码编码器
+    private static final BCryptPasswordEncoder PASSWORD_ENCODER = new BCryptPasswordEncoder();
+
+    /**
+     * 验证码校验 Lua 脚本
+     */
+    private final DefaultRedisScript<Long> checkAndDeleteVerifyCodeScript;
+
+    /**
+     * 登录失败计数 Lua 脚本
+     */
+    private final DefaultRedisScript<Long> checkAndIncrementLoginFailScript;
+
+    /**
+     * 每日发送次数限制 Lua 脚本
+     */
+    private final DefaultRedisScript<Long> checkAndIncrementDailyLimitScript;
+
+    /**
+     * 构造函数：初始化 Lua 脚本
+     */
+    public UserServiceImpl() {
+        // 1. 验证码校验 Lua 脚本
+        checkAndDeleteVerifyCodeScript = new DefaultRedisScript<>();
+        // 从 classpath 的 lua 目录下加载 Lua 脚本文件
+        checkAndDeleteVerifyCodeScript.setLocation(new ClassPathResource("lua/check_and_delete_verify_code.lua"));
+        // 指定脚本返回值类型
+        checkAndDeleteVerifyCodeScript.setResultType(Long.class);
+
+        // 2. 登录失败计数 Lua 脚本
+        checkAndIncrementLoginFailScript = new DefaultRedisScript<>();
+        checkAndIncrementLoginFailScript.setLocation(new ClassPathResource("lua/check_and_increment_login_fail_count.lua"));
+        checkAndIncrementLoginFailScript.setResultType(Long.class);
+
+        // 3. 每日发送次数限制 Lua 脚本
+        checkAndIncrementDailyLimitScript = new DefaultRedisScript<>();
+        checkAndIncrementDailyLimitScript.setLocation(new ClassPathResource("lua/check_and_increment_verify_code_daily_limit.lua"));
+        checkAndIncrementDailyLimitScript.setResultType(Long.class);
+    }
 
     @Override
     public Response<?> register(RegisterUserReqVO registerUserReqVO) {
@@ -62,10 +103,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         String password = registerUserReqVO.getPassword();
         String verifyCode = registerUserReqVO.getVerifyCode();
         // 1. 校验验证码
-        // TODO: 验证码先写死 123456，后续开发验证码发送接口，再重构这里
-        if (!"123456".equals(verifyCode)) {
-            throw new BizException(ResponseCodeEnum.USER_VERIFY_CODE_ERROR);
-        }
+        checkVerifyCode(verifyCode, mobile, VerifyCodeTypeEnum.REGISTER.getPurpose());
         // 2. 校验手机号是否已注册
         QueryWrapper queryWrapper = QueryWrapper.create();
         queryWrapper.eq(User::getMobile, mobile);
@@ -74,8 +112,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             throw new BizException(ResponseCodeEnum.USER_MOBILE_EXISTS);
         }
         // 3. 密码加密（使用 BCrypt 算法）
-        BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
-        String encodedPassword = passwordEncoder.encode(password);
+        String encodedPassword = PASSWORD_ENCODER.encode(password);
 
         // 4. 构建用户实体，插入数据库
         User user = User.builder()
@@ -89,6 +126,8 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         if (!save) {
             return Response.fail(ResponseCodeEnum.SYSTEM_ERROR);
         }
+
+        log.info("用户注册成功, userId: {}, mobile: {}", user.getId(), mobile);
         return Response.success();
     }
 
@@ -105,18 +144,21 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             throw new BizException(ResponseCodeEnum.USER_MOBILE_NOT_REGISTERED);
         }
 
-        // 3. 根据登录类型，进行身份验证
-        if (Objects.equals(type, LoginTypeEnum.PASSWORD.getCode())) {
-            // 密码登录：校验密码是否正确
-            checkPassword(loginUserReqVO.getPassword(), user.getPassword());
-        } else {
-            // 验证码登录：校验验证码是否正确
-            checkVerifyCode(loginUserReqVO.getVerifyCode());
-        }
-
-        // 4. 校验用户状态（是否被禁用）
+        // 3. 校验用户状态（是否被禁用）
         if (Objects.equals(user.getStatus(), UserStatusEnum.DISABLED.getCode())) {
             throw new BizException(ResponseCodeEnum.USER_STATUS_DISABLED);
+        }
+
+        // 4. 根据登录类型，进行身份验证
+        if (Objects.equals(type, LoginTypeEnum.PASSWORD.getCode())) {
+            // 检查登录失败次数
+            checkLoginFailLimit(mobile);
+
+            // 密码登录：校验密码是否正确
+            checkPassword(loginUserReqVO.getPassword(), user.getPassword(), mobile);
+        } else {
+            // 验证码登录：校验验证码是否正确
+            checkVerifyCode(loginUserReqVO.getVerifyCode(), mobile, VerifyCodeTypeEnum.LOGIN.getPurpose());
         }
 
         // 5. 调用 SaToken 执行登录，传入用户 ID
@@ -141,9 +183,40 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
     }
 
     @Override
+    public Response<?> logout() {
+        // 获取当前请求中的 Token 值
+        String tokenValue = StpUtil.getTokenValue();
+        // 获取当前登录用户的 ID
+        Object userId = StpUtil.getLoginId();
+
+        // 调用 SaToken 的退出登录方法
+        // 此方法会自动从请求头中获取 Token，然后清除该 Token 对应的会话信息
+        StpUtil.logout();
+
+        log.info("用户退出登录, userId: {}, token: {}", userId, tokenValue);
+
+        return Response.success();
+    }
+
+    @Override
     public Response<?> sendVerifyCode(SendVerifyCodeReqVO sendVerifyCodeReqVO) {
         String mobile = sendVerifyCodeReqVO.getMobile();
         Integer type = sendVerifyCodeReqVO.getType();
+
+        // 行为验证码二次校验
+        String captchaId = sendVerifyCodeReqVO.getCaptchaId();
+        if (StrUtil.isBlank(captchaId)) {
+            throw new BizException(ResponseCodeEnum.CAPTCHA_VERIFICATION_FAILED);
+        }
+
+        // 判断 ImageCaptchaApplication 是否支持二次校验
+        boolean verified = false;
+        if (imageCaptchaApplication instanceof SecondaryVerificationApplication) {
+            verified = ((SecondaryVerificationApplication) imageCaptchaApplication).secondaryVerification(captchaId);
+        }
+        if (!verified) {
+            throw new BizException(ResponseCodeEnum.CAPTCHA_VERIFICATION_FAILED);
+        }
 
         // 判断验证码类型是否合法
         VerifyCodeTypeEnum verifyCodeType = VerifyCodeTypeEnum.valueOf(type);
@@ -152,27 +225,45 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         }
 
         // 发送频率限制：检查是否在 60 秒内重复发送
-        String limitKey = VERIFY_CODE_LIMIT_KEY_PREFIX + verifyCodeType.getPurpose() + ":" + mobile;
-        if (redisTemplate.hasKey(limitKey)) {
+        String limitKey = UserConstant.VERIFY_CODE_LIMIT_KEY_PREFIX + verifyCodeType.getPurpose() + ":" + mobile;
+
+        // 如果 Key 已存在（60 秒内已发送过），返回 false；不存在则创建 Key 并返回 true
+        Boolean absent = stringRedisTemplate.opsForValue()
+                .setIfAbsent(limitKey, "1", UserConstant.VERIFY_CODE_LIMIT_SECONDS, TimeUnit.SECONDS);
+
+        if (Boolean.FALSE.equals(absent)) {
             throw new BizException(ResponseCodeEnum.VERIFY_CODE_SEND_TOO_FREQUENT);
+        }
+
+        // 每日发送次数限制：同一手机号、同一场景，每天最多发送 10 条
+        String dailyLimitKey = UserConstant.VERIFY_CODE_DAILY_LIMIT_KEY_PREFIX + verifyCodeType.getPurpose()
+                + ":" + mobile + ":" + LocalDate.now();
+
+        // 计算从当前时间，到第二天凌晨零点之间还剩下多少秒
+        long secondsUntilMidnight = Duration.between(
+                LocalDateTime.now(),
+                LocalDateTime.of(LocalDate.now().plusDays(1), LocalTime.MIDNIGHT)
+        ).getSeconds();
+
+        // 执行 Lua 脚本：原子性地检查每日发送次数并累加
+        Long dailyCount = stringRedisTemplate.execute(checkAndIncrementDailyLimitScript,
+                Collections.singletonList(dailyLimitKey),
+                String.valueOf(UserConstant.VERIFY_CODE_DAILY_LIMIT),
+                String.valueOf(secondsUntilMidnight));
+
+        // 如果已经超过 10 条，抛出业务异常
+        if (dailyCount == -1) {
+            throw new BizException(ResponseCodeEnum.VERIFY_CODE_DAILY_LIMIT_EXCEEDED);
         }
 
         // 生成 6 位随机数字验证码
         String verifyCode = RandomUtil.randomNumbers(6);
 
-        // 通过 Pipeline 通道，批量写入 Redis（频率限制 Key + 验证码），减少网络往返，降低部分失败的风险
-        String redisKey = VERIFY_CODE_KEY_PREFIX + verifyCodeType.getPurpose() + ":" + mobile;
-        redisTemplate.executePipelined(new SessionCallback<Void>() {
-            @Override
-            @SuppressWarnings("unchecked")
-            public Void execute(@NonNull RedisOperations operations) {
-                // 先写频率限制 Key（60 秒 TTL）
-                operations.opsForValue().set(limitKey, "1", VERIFY_CODE_LIMIT_SECONDS, TimeUnit.SECONDS);
-                // 再写验证码 Key（5 分钟 TTL）
-                operations.opsForValue().set(redisKey, verifyCode, VERIFY_CODE_EXPIRE_MINUTES, TimeUnit.MINUTES);
-                return null;
-            }
-        });
+        // 构建验证码 Redis Key
+        String redisKey = UserConstant.VERIFY_CODE_KEY_PREFIX + verifyCodeType.getPurpose() + ":" + mobile;
+
+        // 缓存验证码（5 分钟 TTL）
+        stringRedisTemplate.opsForValue().set(redisKey, verifyCode, UserConstant.VERIFY_CODE_EXPIRE_MINUTES, TimeUnit.MINUTES);
 
         // 异步发送短信验证码
         bizExecutor.execute(() -> sendSms(mobile, verifyCode));
@@ -195,19 +286,30 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      *
      * @param rawPassword     明文密码
      * @param encodedPassword 加密后的密码
+     * @param mobile          手机号
      */
-    private void checkPassword(String rawPassword, String encodedPassword) {
+    private void checkPassword(String rawPassword, String encodedPassword, String mobile) {
         // 密码不能为空
         if (StrUtil.isBlank(rawPassword)) {
+            // 登录失败次数 +1
+            addLoginFailCount(mobile);
+
             throw new BizException(ResponseCodeEnum.USER_PASSWORD_ERROR);
         }
 
-        BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
         // 使用 BCrypt 校验明文密码和密文密码是否匹配
-        boolean matches = passwordEncoder.matches(rawPassword, encodedPassword);
+        boolean matches = PASSWORD_ENCODER.matches(rawPassword, encodedPassword);
+
         if (!matches) {
+            // 登录失败次数 +1
+            addLoginFailCount(mobile);
+
             throw new BizException(ResponseCodeEnum.USER_PASSWORD_ERROR);
         }
+
+        // 密码校验成功，清除登录失败次数
+        String failCountKey = UserConstant.LOGIN_FAIL_COUNT_KEY_PREFIX + mobile;
+        stringRedisTemplate.delete(failCountKey);
     }
 
     /**
@@ -215,14 +317,22 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      *
      * @param verifyCode 验证码
      */
-    private void checkVerifyCode(String verifyCode) {
+    private void checkVerifyCode(String verifyCode, String mobile, String purpose) {
         // 验证码不能为空
         if (StrUtil.isBlank(verifyCode)) {
             throw new BizException(ResponseCodeEnum.USER_VERIFY_CODE_ERROR);
         }
 
-        // TODO: 验证码先写死 123456，后续开发验证码发送接口，再重构这里
-        if (!"123456".equals(verifyCode)) {
+        // 构建 Redis Key
+        String redisKey = UserConstant.VERIFY_CODE_KEY_PREFIX + purpose + ":" + mobile;
+
+        // 执行 Lua 脚本：原子性地比对验证码并删除（匹配返回 1; 不匹配或 Key 不存在返回 0）
+        Long result = stringRedisTemplate.execute(checkAndDeleteVerifyCodeScript,
+                Collections.singletonList(redisKey),
+                verifyCode);
+
+        // 验证码错误或已过期
+        if (result == 0) {
             throw new BizException(ResponseCodeEnum.USER_VERIFY_CODE_ERROR);
         }
     }
@@ -241,6 +351,48 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
             log.info("验证码发送成功, mobile: {}, verifyCode: {}", mobile, verifyCode);
         } catch (Exception e) {
             log.error("验证码发送失败, mobile: {}, verifyCode: {}", mobile, verifyCode, e);
+        }
+    }
+
+    /**
+     * 检查登录失败次数是否超限
+     *
+     * @param mobile 手机号
+     */
+    private void checkLoginFailLimit(String mobile) {
+        // 构建 Redis Key
+        String failCountKey = UserConstant.LOGIN_FAIL_COUNT_KEY_PREFIX + mobile;
+
+        // 查询 Redis 缓存中的计数
+        String failCountStr = stringRedisTemplate.opsForValue().get(failCountKey);
+
+        // 判断登录失败次数是否超过上限
+        if (StrUtil.isNotBlank(failCountStr)) {
+            int failCount = Integer.parseInt(failCountStr);
+            if (failCount >= UserConstant.LOGIN_FAIL_MAX_COUNT) {
+                throw new BizException(ResponseCodeEnum.LOGIN_FAIL_TOO_MANY);
+            }
+        }
+    }
+
+    /**
+     * 累加登录失败次数
+     *
+     * @param mobile 手机号
+     */
+    private void addLoginFailCount(String mobile) {
+        // 构建 Redis Key
+        String failCountKey = UserConstant.LOGIN_FAIL_COUNT_KEY_PREFIX + mobile;
+
+        // 执行 Lua 脚本：原子性地检查失败次数并累加（超限返回 -1; 未超限返回累加后的值）
+        Long result = stringRedisTemplate.execute(checkAndIncrementLoginFailScript,
+                Collections.singletonList(failCountKey),
+                String.valueOf(UserConstant.LOGIN_FAIL_MAX_COUNT),
+                String.valueOf(UserConstant.LOGIN_LOCK_MINUTES * 60));
+
+        // 失败次数已达上限，直接拒绝
+        if (result == -1) {
+            throw new BizException(ResponseCodeEnum.LOGIN_FAIL_TOO_MANY);
         }
     }
 }

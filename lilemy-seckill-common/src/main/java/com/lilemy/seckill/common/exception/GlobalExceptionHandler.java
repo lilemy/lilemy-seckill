@@ -1,5 +1,6 @@
 package com.lilemy.seckill.common.exception;
 
+import cn.dev33.satoken.exception.NotLoginException;
 import com.lilemy.seckill.common.enums.ResponseCodeEnum;
 import com.lilemy.seckill.common.utils.Response;
 import jakarta.servlet.http.HttpServletRequest;
@@ -22,8 +23,6 @@ public class GlobalExceptionHandler {
 
     /**
      * 捕获自定义业务异常
-     *
-     * @return
      */
     @ExceptionHandler({BizException.class})
     @ResponseBody
@@ -34,8 +33,6 @@ public class GlobalExceptionHandler {
 
     /**
      * 捕获参数校验异常
-     *
-     * @return
      */
     @ExceptionHandler({MethodArgumentNotValidException.class})
     @ResponseBody
@@ -49,17 +46,16 @@ public class GlobalExceptionHandler {
         StringBuilder sb = new StringBuilder();
 
         // 获取校验不通过的字段，并组合错误信息，格式为： email 邮箱格式不正确, 当前值: '123124qq.com';
-        Optional.ofNullable(bindingResult.getFieldErrors()).ifPresent(errors -> {
-            errors.forEach(error ->
-                    sb.append(error.getField())
-                            .append(" ")
-                            .append(error.getDefaultMessage())
-                            .append(", 当前值: '")
-                            .append(error.getRejectedValue())
-                            .append("'; ")
+        Optional.of(bindingResult.getFieldErrors()).ifPresent(errors ->
+                errors.forEach(error ->
+                        sb.append(error.getField())
+                                .append(" ")
+                                .append(error.getDefaultMessage())
+                                .append(", 当前值: '")
+                                .append(error.getRejectedValue())
+                                .append("'; ")
 
-            );
-        });
+                ));
 
         // 错误信息
         String errorMessage = sb.toString();
@@ -70,11 +66,17 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * 捕获 SaToken 未登录异常
+     */
+    @ExceptionHandler({NotLoginException.class})
+    @ResponseBody
+    public Response<Object> handleNotLoginException(HttpServletRequest request, NotLoginException e) {
+        log.warn("{} request fail, 未登录异常: {}", request.getRequestURI(), e.getMessage());
+        return Response.fail(ResponseCodeEnum.UNAUTHORIZED);
+    }
+
+    /**
      * 其他类型异常
-     *
-     * @param request
-     * @param e
-     * @return
      */
     @ExceptionHandler({Exception.class})
     @ResponseBody

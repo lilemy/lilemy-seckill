@@ -27,6 +27,10 @@ public enum ResponseCodeEnum implements BaseExceptionInterface {
     USER_STATUS_DISABLED("20005", "账号已被禁用，请联系管理员"),
     VERIFY_CODE_TYPE_ERROR("20006", "验证码类型错误"),
     VERIFY_CODE_SEND_TOO_FREQUENT("20007", "验证码发送过于频繁，请稍后再试"),
+    VERIFY_CODE_DAILY_LIMIT_EXCEEDED("20008", "验证码每日发送次数已达上限，请明天再试"),
+    LOGIN_FAIL_TOO_MANY("20009", "密码错误次数过多，请 30 分钟后再试"),
+    UNAUTHORIZED("20010", "未登录，请先登录"),
+    CAPTCHA_VERIFICATION_FAILED("20011", "行为验证码校验失败，请重新验证"),
     ;
 
     // 异常码

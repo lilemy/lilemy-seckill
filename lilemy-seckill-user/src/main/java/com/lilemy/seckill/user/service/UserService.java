@@ -33,6 +33,13 @@ public interface UserService extends IService<User> {
     Response<LoginUserRspVO> login(LoginUserReqVO loginUserReqVO);
 
     /**
+     * 退出登录
+     *
+     * @return 是否退出成功
+     */
+    Response<?> logout();
+
+    /**
      * 发送验证码
      *
      * @param sendVerifyCodeReqVO 验证码请求

@@ -42,6 +42,8 @@
         <disruptor.version>3.4.4</disruptor.version>
         <mybatis-flex.version>1.11.7</mybatis-flex.version>
         <hutool.version>5.8.38</hutool.version>
+        <!-- 行为验证码版本 -->
+        <tianai-captcha.version>1.5.5</tianai-captcha.version>
     </properties>
 
     <!-- 统一依赖管理 -->
@@ -84,6 +86,12 @@
                 <artifactId>sa-token-spring-boot3-starter</artifactId>
                 <version>${sa-token.version}</version>
             </dependency>
+            <!-- Sa-Token 整合 RedisTemplate -->
+            <dependency>
+                <groupId>cn.dev33</groupId>
+                <artifactId>sa-token-redis-template</artifactId>
+                <version>${sa-token.version}</version>
+            </dependency>
             <!-- Disruptor 高性能队列（Log4j2 异步日志需要） -->
             <dependency>
                 <groupId>com.lmax</groupId>
@@ -105,6 +113,12 @@
                 <groupId>cn.hutool</groupId>
                 <artifactId>hutool-all</artifactId>
                 <version>${hutool.version}</version>
+            </dependency>
+            <!-- 行为验证码 -->
+            <dependency>
+                <groupId>cloud.tianai.captcha</groupId>
+                <artifactId>tianai-captcha-springboot-starter</artifactId>
+                <version>${tianai-captcha.version}</version>
             </dependency>
         </dependencies>
     </dependencyManagement>

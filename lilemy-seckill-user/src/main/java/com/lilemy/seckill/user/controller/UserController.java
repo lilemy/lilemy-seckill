@@ -49,6 +49,15 @@ public class UserController {
     }
 
     /**
+     * 退出登录
+     */
+    @PostMapping("/logout")
+    @ApiOperationLog(description = "退出登录")
+    public Response<?> logout() {
+        return userService.logout();
+    }
+
+    /**
      * 发送验证码
      */
     @PostMapping("/code/send")
