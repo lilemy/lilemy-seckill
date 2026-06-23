@@ -186,7 +186,7 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      *
      * @return 昵称
      */
-    private String generateNickname()
+    private String generateNickname() {
         return "用户" + RandomUtil.randomNumbers(6);
     }
 
