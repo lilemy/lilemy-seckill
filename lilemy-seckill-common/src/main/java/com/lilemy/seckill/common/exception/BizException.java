@@ -3,6 +3,8 @@ package com.lilemy.seckill.common.exception;
 import lombok.Getter;
 import lombok.Setter;
 
+import java.io.Serial;
+
 /**
  * 业务异常类
  *
@@ -12,6 +14,9 @@ import lombok.Setter;
 @Getter
 @Setter
 public class BizException extends RuntimeException {
+
+    @Serial
+    private static final long serialVersionUID = -5785464870019856130L;
 
     // 异常码
     private String errorCode;
