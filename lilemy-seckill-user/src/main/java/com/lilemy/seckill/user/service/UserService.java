@@ -2,6 +2,8 @@ package com.lilemy.seckill.user.service;
 
 import com.lilemy.seckill.common.entity.User;
 import com.lilemy.seckill.common.utils.Response;
+import com.lilemy.seckill.user.model.vo.LoginUserReqVO;
+import com.lilemy.seckill.user.model.vo.LoginUserRspVO;
 import com.lilemy.seckill.user.model.vo.RegisterUserReqVO;
 import com.mybatisflex.core.service.IService;
 
@@ -20,4 +22,12 @@ public interface UserService extends IService<User> {
      * @return 是否注册成功
      */
     Response<?> register(RegisterUserReqVO registerUserReqVO);
+
+    /**
+     * 用户登录
+     *
+     * @param loginUserReqVO 用户登录请求
+     * @return 登录用户 Token 等信息
+     */
+    Response<LoginUserRspVO> login(LoginUserReqVO loginUserReqVO);
 }

@@ -1,18 +1,26 @@
 package com.lilemy.seckill.user.service.impl;
 
+import cn.dev33.satoken.stp.StpUtil;
 import cn.hutool.core.util.RandomUtil;
+import cn.hutool.core.util.StrUtil;
 import com.lilemy.seckill.common.entity.User;
 import com.lilemy.seckill.common.enums.ResponseCodeEnum;
 import com.lilemy.seckill.common.exception.BizException;
 import com.lilemy.seckill.common.mapper.UserMapper;
 import com.lilemy.seckill.common.utils.Response;
+import com.lilemy.seckill.user.enums.LoginTypeEnum;
 import com.lilemy.seckill.user.enums.UserStatusEnum;
+import com.lilemy.seckill.user.model.vo.LoginUserReqVO;
+import com.lilemy.seckill.user.model.vo.LoginUserRspVO;
 import com.lilemy.seckill.user.model.vo.RegisterUserReqVO;
 import com.lilemy.seckill.user.service.UserService;
 import com.mybatisflex.core.query.QueryWrapper;
 import com.mybatisflex.spring.service.impl.ServiceImpl;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+
+import java.util.Objects;
 
 /**
  * 用户表 服务层实现。
@@ -20,6 +28,7 @@ import org.springframework.stereotype.Service;
  * @author lilemy
  * @since 2026-06-18
  */
+@Slf4j
 @Service
 public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements UserService {
 
@@ -59,6 +68,54 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
         return Response.success();
     }
 
+    @Override
+    public Response<LoginUserRspVO> login(LoginUserReqVO loginUserReqVO) {
+        String mobile = loginUserReqVO.getMobile();
+        Integer type = loginUserReqVO.getType();
+
+        // 1. 根据手机号查询用户
+        User user = this.getOne(new QueryWrapper().eq(User::getMobile, mobile));
+
+        // 2. 判断用户是否存在
+        if (Objects.isNull(user)) {
+            throw new BizException(ResponseCodeEnum.USER_MOBILE_NOT_REGISTERED);
+        }
+
+        // 3. 根据登录类型，进行身份验证
+        if (Objects.equals(type, LoginTypeEnum.PASSWORD.getCode())) {
+            // 密码登录：校验密码是否正确
+            checkPassword(loginUserReqVO.getPassword(), user.getPassword());
+        } else {
+            // 验证码登录：校验验证码是否正确
+            checkVerifyCode(loginUserReqVO.getVerifyCode());
+        }
+
+        // 4. 校验用户状态（是否被禁用）
+        if (Objects.equals(user.getStatus(), UserStatusEnum.DISABLED.getCode())) {
+            throw new BizException(ResponseCodeEnum.USER_STATUS_DISABLED);
+        }
+
+        // 5. 调用 SaToken 执行登录，传入用户 ID
+        StpUtil.login(user.getId());
+
+        // 6. 获取 SaToken 生成的 Token
+        String token = StpUtil.getTokenValue();
+
+        // 7. 构建返参对象
+        LoginUserRspVO loginUserRspVO = LoginUserRspVO.builder()
+                .token(token)
+                .userInfo(LoginUserRspVO.UserInfo.builder()
+                        .id(user.getId())
+                        .nickname(user.getNickname())
+                        .avatar(user.getAvatar())
+                        .build())
+                .build();
+
+        log.info("用户登录成功, userId: {}, mobile: {}", user.getId(), mobile);
+
+        return Response.success(loginUserRspVO);
+    }
+
     /**
      * 生成随机昵称
      * 格式：用户 + 6 位随机数字，如：用户382910
@@ -67,5 +124,42 @@ public class UserServiceImpl extends ServiceImpl<UserMapper, User> implements Us
      */
     private String generateNickname() {
         return "用户" + RandomUtil.randomNumbers(6);
+    }
+
+    /**
+     * 校验密码
+     *
+     * @param rawPassword     明文密码
+     * @param encodedPassword 加密后的密码
+     */
+    private void checkPassword(String rawPassword, String encodedPassword) {
+        // 密码不能为空
+        if (StrUtil.isBlank(rawPassword)) {
+            throw new BizException(ResponseCodeEnum.USER_PASSWORD_ERROR);
+        }
+
+        BCryptPasswordEncoder passwordEncoder = new BCryptPasswordEncoder();
+        // 使用 BCrypt 校验明文密码和密文密码是否匹配
+        boolean matches = passwordEncoder.matches(rawPassword, encodedPassword);
+        if (!matches) {
+            throw new BizException(ResponseCodeEnum.USER_PASSWORD_ERROR);
+        }
+    }
+
+    /**
+     * 校验验证码
+     *
+     * @param verifyCode 验证码
+     */
+    private void checkVerifyCode(String verifyCode) {
+        // 验证码不能为空
+        if (StrUtil.isBlank(verifyCode)) {
+            throw new BizException(ResponseCodeEnum.USER_VERIFY_CODE_ERROR);
+        }
+
+        // TODO: 验证码先写死 123456，后续开发验证码发送接口，再重构这里
+        if (!"123456".equals(verifyCode)) {
+            throw new BizException(ResponseCodeEnum.USER_VERIFY_CODE_ERROR);
+        }
     }
 }
