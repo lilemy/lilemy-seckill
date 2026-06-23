@@ -5,6 +5,7 @@ import com.lilemy.seckill.common.utils.Response;
 import com.lilemy.seckill.user.model.vo.LoginUserReqVO;
 import com.lilemy.seckill.user.model.vo.LoginUserRspVO;
 import com.lilemy.seckill.user.model.vo.RegisterUserReqVO;
+import com.lilemy.seckill.user.model.vo.SendVerifyCodeReqVO;
 import com.mybatisflex.core.service.IService;
 
 /**
@@ -30,4 +31,12 @@ public interface UserService extends IService<User> {
      * @return 登录用户 Token 等信息
      */
     Response<LoginUserRspVO> login(LoginUserReqVO loginUserReqVO);
+
+    /**
+     * 发送验证码
+     *
+     * @param sendVerifyCodeReqVO 验证码请求
+     * @return 是否发送成功
+     */
+    Response<?> sendVerifyCode(SendVerifyCodeReqVO sendVerifyCodeReqVO);
 }
